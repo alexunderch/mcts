@@ -32,25 +32,30 @@ def act_uct(
 ):
     """Select action using UCT."""
     children = tree.children[node]
-    exploit = tree.values[children] / (tree.visits[children] + eps)
+    state = get_state(tree, node)
 
-    explore = jnp.sqrt(jnp.log(tree.visits[node]) / (tree.visits[children] + eps))
+    visited = children != Tree.UNVISITED
+
+    exploit = -tree.values[children]
+    explore = jnp.sqrt(jnp.log(tree.visits[node] + 1.0) / (tree.visits[children] + eps))
 
     uct = exploit + c * explore
 
-    state = get_state(tree, node)
-    uct = jnp.where(state.legal_action_mask, uct, -jnp.inf)
+    uct = jnp.where(state.legal_action_mask & (~visited), jnp.inf, uct)
+    uct = jnp.where(~state.legal_action_mask, -jnp.inf, uct)
     return jnp.argmax(uct)
 
 
 def act_greedy(tree: Tree, node: jax.Array):
     """Select action using greedy policy."""
     children = tree.children[node]
-    value = tree.values[children]
+    visited = children != Tree.UNVISITED
 
     state = get_state(tree, node)
-    value = jnp.where(state.legal_action_mask, value, -jnp.inf)
-    return jnp.argmax(value)
+    scores = jnp.where(
+        state.legal_action_mask & visited, tree.visits[children], -jnp.inf
+    )
+    return jnp.argmax(scores)
 
 
 batch_act_greedy = jax.jit(jax.vmap(act_greedy, in_axes=(0, 0)))

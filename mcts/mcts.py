@@ -69,7 +69,7 @@ def simulation(
 ):
 
     state = get_state(tree, node)
-    player = 1 - state.current_player
+    player = state.current_player
 
     def cond_fun(carry: tuple):
         _, state = carry
@@ -90,12 +90,20 @@ def simulation(
 
     return tree.replace(  # type: ignore
         rewards=update(tree.rewards, state.rewards, node),
-        values=update(tree.values, state.rewards[player], node),
+        values=update(
+            tree.values,
+            tree.values[node]
+            + (state.rewards[player] - tree.values[node]) / (tree.visits[node] + 1),
+            node,
+        ),
         visits=update(tree.visits, tree.visits[node] + 1, node),
     )
 
 
 def backpropagation(tree: Tree, node: jax.Array):
+
+    player = get_state(tree, node).current_player
+    value = tree.rewards[node, player]
 
     def cond_fun(carry: tuple) -> bool:
         _, node, _ = carry
@@ -104,26 +112,22 @@ def backpropagation(tree: Tree, node: jax.Array):
     def body_fun(carry: tuple) -> tuple:
         tree, node, value = carry
 
-        value *= -1
-
         parent = tree.parents[node]
         visit = tree.visits[parent]
 
-        parent_value = tree.values[parent] + (value - tree.values[parent]) / (visit + 1)
+        parent_value = tree.values[parent] + (-value - tree.values[parent]) / (
+            visit + 1
+        )
         tree = tree.replace(
             values=update(tree.values, parent_value, parent),
             visits=update(tree.visits, visit + 1, parent),
         )
-        return (tree, parent, value)
+        return (tree, parent, -value)
 
     tree, *_ = jax.lax.while_loop(
         cond_fun,
         body_fun,
-        (
-            tree,
-            node,
-            tree.values[node],
-        ),
+        (tree, node, value),
     )
     return tree
 
